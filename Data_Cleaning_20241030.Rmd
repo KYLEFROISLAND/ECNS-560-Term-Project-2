@@ -1,0 +1,189 @@
+---
+title: "ECNS 560 Project - Bison Population"
+author: "Kyle Froisland"
+date: "2024-10-16"
+output: html_document
+---
+
+Load Raw Data/Packages: *Data loaded from path on my local computer
+```{r}
+library(readr)
+library(tidyverse)
+library(readxl)
+library(sf)
+library(tmap)
+library(raster)
+library(rvest)
+library(units)
+library(dplyr)
+
+setwd("C:/Users/kdfro/Documents/MSU/ECNS 560/Term Project")
+Bison_numbers <- read_csv("Data/Bison_numbers_by_the_county National Bison Association.csv")
+#hunting_data_tidy <- read_excel("Data/hunting_data_tidy.xlsx")
+```
+
+Create Tidy Version of Population Data:
+```{r}
+tidy_bison = Bison_numbers |>
+  pivot_longer(cols=bison_census2002:bison_census2017, names_to="year", values_to="population") |>
+  dplyr::select(state_code, county, year, population)
+```
+
+Cleaning:
+```{r}
+#Change year Variable in tidy_bison to just the number (remove "bison_census")
+tidy_bison_clean = mutate(tidy_bison, year = sapply(str_remove(tidy_bison$year, "bison_census"), function(x) (x[1])))
+
+#define new dataset with by-state population vs by county
+bison_data_merge = tidy_bison_clean |>
+  group_by(state_code, year) |>
+  summarize(total_population = sum(population)) |>
+  rename_at(2, ~'year')
+
+#Change column name of year in hunting data, filter to only years that match population data
+colnames(hunting_data_tidy)[2] = 'year' 
+hunting_data_tidy |>
+  filter(year == "2002" | year == "2007" | year == "2012" | year == "2017")
+
+#Ensure that years are numeric
+bison_data_merge$year = as.numeric(bison_data_merge$year)
+hunting_data_tidy$year = as.numeric(hunting_data_tidy$year)
+
+```
+
+Merge Data Sets:
+```{r}
+#join with hunting data by state and year as ID
+merged_bison_data = left_join(bison_data_merge, hunting_data_tidy, by = c("state_code" = "state_code", "year" = "year"))
+```
+
+
+Load Map Data from Shapefile: 
+```{r}
+setwd("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project")
+
+#Load Habitats:
+habitats = raster("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project/Data/USGS Bison Habitat Map/mBISOx_CONUS_HabMap_2001v1/mBISOx_CONUS_HabMap_2001v1.tif")
+
+#Load Ranges:
+ranges = st_read("Data/Bison Range Map/mBISOx_CONUS_Range_2001v1/mBISOx_CONUS_Range_2001v1.shp")
+
+```
+
+Quick Spatial Plot:
+```{r}
+qtm(ranges)
+```
+
+
+Additional Visualizations:
+```{r}
+#Comparing population change over time across some Great Plains states
+graph1_data = merged_bison_data |>
+  filter(state_code == "MONTANA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA")
+
+ggplot(graph1_data, aes(x = year, y = total_population)) +
+  geom_point() +
+  labs(title = "Bison Population by State", x = "Year", y = "Bison Population") +
+  facet_wrap(~state_code)
+
+#Looking for relationship between number of hunting licenses and population
+ggplot(merged_bison_data, aes(x = `Paid Hunting License Holders`, y = total_population)) +
+  geom_point() + geom_smooth()
+```
+
+Saki's Plots:
+```{r}
+data = hunting_data_tidy
+
+names(data)[2] <- "Year"
+
+data <- data %>%
+  mutate(Year = as.numeric(Year))
+
+data_long <- data |>
+  pivot_longer(
+    cols = -c(Year, state_code),  # Exclude Year and state_code from pivoting
+    names_to = "License_Type",     # New column to hold the names of original columns
+    values_to = "Count"            # New column to hold the values
+  )
+
+# to line plot of each license type over time for a specific state (e.g., Montana)
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal() +
+  facet_wrap(~ License_Type, scales = "free_y")  # To separate plots by License Type with individual y-scales
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+# Plot the data
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+data_long$License_Type <- factor(data_long$License_Type, 
+                                 labels = c("Cost Non-Resident", "Cost Resident", "Gross Cost", 
+                                            "Non-Resident Licenses", "Paid Holders", "Resident Licenses"))
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count)) +
+  geom_line(aes(color = License_Type)) +
+  geom_point(aes(color = License_Type)) +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost") +
+  theme_minimal() +
+  facet_wrap(~ License_Type, scales = "free_y")
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method = "loess") +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+# Load the scales package for custom label formatting
+library(scales)
+
+# Plot with custom y-axis labels
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method = "loess") +
+  scale_y_log10(labels = comma) +  # Use comma format for log scale labels
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+```
+

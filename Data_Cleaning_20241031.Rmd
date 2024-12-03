@@ -1,0 +1,392 @@
+---
+title: "ECNS 560 Project - Bison Population"
+author: "Kyle Froisland"
+date: "2024-10-16"
+output: html_document
+---
+
+Load Raw Data/Packages: *Data loaded from path on my local computer
+```{r}
+library(readr)
+library(tidyverse)
+library(readxl)
+library(sf)
+library(tmap)
+library(raster)
+library(rvest)
+library(units)
+library(dplyr)
+library(ggplot2)
+library(units)
+
+Bison_numbers <- read_csv("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project/Data/Bison_numbers_by_the_county National Bison Association.csv")
+hunting_data_tidy <- read_excel("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project/Data/hunting_data_tidy.xlsx")
+```
+
+Create Tidy Version of Population Data:
+```{r}
+tidy_bison = Bison_numbers |>
+  pivot_longer(cols=bison_census2002:bison_census2017, names_to="year", values_to="population") |>
+  dplyr::select(state_code, county, year, population)
+```
+
+Cleaning:
+```{r}
+#Change year Variable in tidy_bison to just the number (remove "bison_census")
+tidy_bison_clean = mutate(tidy_bison, year = sapply(str_remove(tidy_bison$year, "bison_census"), function(x) (x[1])))
+
+#define new dataset with by-state population vs by county
+bison_data_merge = tidy_bison_clean |>
+  group_by(state_code, year) |>
+  summarize(total_population = sum(population)) |>
+  rename_at(2, ~'year')
+
+#Change column name of year in hunting data, filter to only years that match population data
+colnames(hunting_data_tidy)[2] = 'year' 
+hunting_data_tidy |>
+  filter(year == "2002" | year == "2007" | year == "2012" | year == "2017")
+
+#Ensure that years are numeric
+bison_data_merge$year = as.numeric(bison_data_merge$year)
+hunting_data_tidy$year = as.numeric(hunting_data_tidy$year)
+
+```
+
+Merge Data Sets:
+```{r}
+#join with hunting data by state and year as ID
+merged_bison_data = left_join(bison_data_merge, hunting_data_tidy, by = c("state_code" = "state_code", "year" = "year"))
+```
+
+
+Load Map Data from Shapefile: 
+```{r}
+setwd("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project")
+
+#Load Ranges:
+ranges = st_read("Data/Bison Range Map/mBISOx_CONUS_Range_2001v1/mBISOx_CONUS_Range_2001v1.shp")
+
+#Load States:
+states = st_read("C:/Users/kdfro/Documents/MSU/GitHub/course-materials/lecture-slides/12-Spatial/data/us_states_contiguous/states_contiguous.shp")
+```
+
+Fix States and Ranges:
+```{r}
+#Check CRS
+st_crs(states)
+st_crs(ranges)
+
+#Transform/Project:
+ranges2 = st_transform(ranges, crs = st_crs(states))
+stopifnot(st_crs(ranges2) == (st_crs(states)))
+
+tm_shape(states) + tm_polygons() +
+  tm_shape(ranges2) + tm_polygons(col = "darkgreen")
+```
+
+Spatial Cleaning/Exploration:
+```{r}
+#Split ranges df into multiple polygons
+ranges3 <- st_cast(ranges2, "POLYGON")
+
+#Create variable for area
+ranges3$area = st_area(ranges3)
+
+#Change units from m^2 to km^2
+set_units(st_area(ranges3), km^2)
+
+#Visualize
+tm_shape(ranges3) + tm_polygons(col = "area") 
+
+#Select states of interest:
+states2 = states |>
+  filter(STATE == "Colorado" | STATE == "Idaho" | STATE == "Kansas" | STATE == "Montana" | STATE == "Nebraska" | STATE == "New Mexico" | STATE == "North Dakota" | STATE == "North Dakota" | STATE == "Oklahoma" | STATE == "South Dakota" | STATE == "Texas" | STATE == "Wyoming")
+
+#Find intersection of ranges and states:
+ranges_intersect = st_filter(ranges3, states2)
+
+#Visualize:
+tm_shape(states2) + tm_polygons() +
+  tm_shape(ranges_intersect) + tm_polygons(col = "darkgreen")
+```
+
+Additional Visualizations:
+```{r}
+#Comparing population change over time across some Great Plains states
+graph1_data = merged_bison_data |>
+  filter(state_code == "MONTANA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA")
+
+graph2_data = merged_bison_data |>
+  filter(state_code == "MONTANA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA" | state_code == "NEBRASKA" | state_code == "KANSAS" | state_code == "OKLAHOMA" | state_code == "IDAHO" | state_code == "COLORADO" | state_code == "NEW MEXICO") |>
+  mutate(population_bin = cut(total_population, breaks = c(0, 2000, 5000, 10000), labels = c("0-2000", "2000-5000", "5000-10000")))
+
+graph3_data = merged_bison_data |>
+  filter(state_code == "TEXAS")
+
+graph4_data = merged_bison_data |>
+  filter(state_code == "OKLAHOMA")
+
+graph5_data = merged_bison_data |>
+  filter(state_code == "MONTANA" | state_code == "TEXAS" | state_code == "OKLAHOMA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA" | state_code == "NEBRASKA" | state_code == "KANSAS" | state_code == "OKLAHOMA" | state_code == "IDAHO" | state_code == "COLORADO" | state_code == "NEW MEXICO")
+
+#Some major state populations... all trends look different
+ggplot(graph1_data, aes(x = year, y = total_population)) +
+  geom_point() +
+  geom_smooth() +
+  labs(title = "Bison Population by State - Some Major Locations", x = "Year", y = "Bison Population") +
+  facet_wrap(~state_code)
+
+#Populations for all states of interest. There seems to be larger decreases in population around western planes states than southwestern states.
+ggplot(graph5_data, aes(x = year, y = total_population)) +
+  geom_point() +
+  geom_smooth() +
+  labs(title = "Bison Population by State - All States of Interest", x = "Year", y = "Bison Population") +
+  facet_wrap(~state_code)
+#This is also biased because southwestern states started with much lower populations to begin with.
+
+#Overall trends across the great plains... see downward trend overall
+ggplot(graph2_data, aes(x = year, y = total_population)) + 
+  xlab("Year") +
+  ylab("Population by State") +
+  labs(title = "Bison Population Over Time") +
+  geom_point(aes(color = population_bin), size = 3) +
+  geom_smooth()
+#Each point on this plot represents a state for a given year, and the color represents the population bin that the state falls into.
+
+#Number of Hunting licenses Over Time
+ggplot(graph2_data, aes(x = year, y = `Paid Hunting License Holders`)) + 
+  xlab("Year") +
+  ylab("Number of Licenses") +
+  labs(title = "Number of Licenses Over Time") +
+  geom_point(aes(color = state_code), size = 3)
+#Removed Texas from this plot because it was an extreme value and make the graph less interpretable by extending the y-axis so much. Texas saw a small increase over the last time period but was otherwise steady.
+
+#Looking for relationship between number of hunting licenses and population
+ggplot(merged_bison_data, aes(x = `Paid Hunting License Holders`, y = total_population)) +
+  geom_point() + 
+  geom_smooth() +
+  xlab("Number of Lisense Holders") +
+  ylab("Bison Population") +
+  labs(title = "Number of Licenses vs Population")
+#Not a clear relationship. With so many states there are too many competing factors at play to control for with our limited data.
+
+#What about just Oklahoma since it is one of the only states with increasing numbers of licenses?
+ggplot(graph4_data, aes(x = `Paid Hunting License Holders`, y = total_population)) +
+  geom_point() + 
+  xlab("Number of Lisense Holders") +
+  ylab("Bison Population") +
+  labs(title = "Number of Licenses vs Population for Oklahoma")
+#We still have not inferred causality, but there seems to be a negative relationship now. The lack of variation in hunting licenses across other states makes regression extremely difficult, but Oklahoma could be a better case study.
+
+```
+
+Research Question 1: Can we predict percent decrease in population levels based on Latitude of their centroid (Proxied by proximity to Saskatchewan)?
+```{r}
+#Load Canada Shapefile:
+Canada = st_read("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project/Data/ca_shp/ca.shp")
+
+#Convert GRS:
+Canada2 = st_transform(Canada, crs = st_crs(states2))
+stopifnot(st_crs(Canada2) == (st_crs(states2)))
+
+#Find Centroids of states of interest:
+state_centroids = st_centroid(states2)
+
+#Plot to confirm:
+tm_shape(states2) + tm_borders() +
+  tm_shape(states2) + tm_dots(col = "red")
+
+#Make a variable for proximity of centroid to Saskatchewan:
+distance_pop_data = state_centroids |>
+  mutate(distance = st_distance(state_centroids$geometry, Canada2[3,4]))
+
+#Merge data with population, create variables for distance from Canada and population decline:
+distance = as.data.frame(distance_pop_data) |>
+  rename(state_code = STATE) |>
+  mutate(state_code = toupper(state_code)) |>
+  left_join(bison_data_merge, by = "state_code") |>
+  group_by(state_code) |>
+  mutate(difference = abs(total_population - total_population[year == 2002])/total_population[year == 2002]) |> #I use percent decrease in order to help control for variability in absolute levels
+  mutate(difference = abs(total_population - total_population[year == 2002])/total_population[year == 2002]) |>
+  filter(year == 2017)
+
+#Plot Proximity vs Population Decrease:
+ggplot(distance, aes(x = log(distance), y = difference)) + 
+  xlab("log(distance) from Canada") +
+  ylab("Percent Decrease in Bison Population") +
+  labs(title = "Latitude and Bison Population Decline") +
+  geom_point()
+
+#Plot with Regression Line:
+ggplot(distance, aes(x = log(distance), y = difference)) + 
+  xlab("log(distance) from Canada") +
+  ylab("Percent Decrease in Bison Population") +
+  labs(title = "Latitude and Bison Population Decline") +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+#Descriptive Regression:
+library(broom)
+lat_pop_model <- lm(difference ~ log(distance), data = distance)
+tidy(lat_pop_model, conf.int = T) 
+#We see that this model estimates a 1% increase in distance from Canada (ie further south) is correlated with a 0.08% smaller decrease in Bison population (ie, the further south the state is, the less its population has decreased between 2002 and 2017). However, this estimate is not reliable at any meaningful level as it is only statistically significant around the 50% level.
+
+```
+
+Research Question 2: How does the percentage of land that is public impact Bison population levels?
+```{r}
+#Scrape Census Dataset
+url = "https://www.summitpost.org/public-and-private-land-percentages-by-us-states/186111"
+page = read_html(url)
+
+selector = "#globalWrapper > div.view-object > div.container-fluid.view-object-main > div > div.object-content > div > div.full-content > noformat:nth-child(3) > div"
+land = page |> 
+  html_elements(selector) |>
+  html_table()
+
+land_data = as.data.frame(land)
+
+#Fix Column Names:
+library(janitor)
+land_data2 <- janitor::row_to_names(land_data, row_number = 1)
+land_data3 = land_data2 |>
+  rename(ABBREV = State) |>
+  rename(public = '% that is Public Land') |>
+  rename(private = '% that is Private Land') 
+
+#String Clean:
+land_data3$public <- sub("%$", "", land_data3$public)
+land_data3$private <- sub("%$", "", land_data3$private)
+
+#Make Columns Numeric:
+land_data4 = land_data3 |>
+  mutate_at(c('public', 'private'), as.numeric)
+
+#Merge Distance data set with hunting data:
+distance_hunting = left_join(distance, hunting_data_tidy, by = c("state_code" = "state_code", "year" = "year")) |> as.data.frame()
+#I could have made this code more efficient by combining with the next few lines, but after rearranging some chunks i just copied and pasted this in.
+
+#Merge Data with hunting and population:
+distance_hunting_land = left_join(distance_hunting, land_data4, by = ("ABBREV" = "ABBREV"))
+
+#Initial Plot of Bison Population Decline vs % of land that is Public:
+ggplot(distance_hunting_land, aes(x = public, y = difference)) + 
+  xlab("% of Land that is Public") +
+  ylab("Percent Decrease in Bison Population") +
+  labs(title = "Public Land Share and Bison Population Decline") +
+  geom_point() 
+
+#There is not an obvious relationship here, but what if we remove Idaho and Montana?
+distance_hunting_land2 = distance_hunting_land |>
+  filter(ABBREV != "ID") |>
+  filter(ABBREV != "MT")
+#Removing these states is justified because... Yellowstone herds moving between states? private land owners shifting herds between states? Need to look at documentation.
+
+#Plot with Regression Line:
+ggplot(distance_hunting_land2, aes(x = public, y = difference)) + 
+  xlab("% of Land that is Public") +
+  ylab("Percent Decrease in Bison Population") +
+  labs(title = "Public Land Share and Bison Population Decline") +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+#Descriptive Regression:
+land_pop_model = lm(difference ~ public, data = distance_hunting_land2)
+tidy(land_pop_model, conf.int = T) 
+```
+
+Saki's Plots:
+```{r}
+data = hunting_data_tidy
+
+names(data)[2] <- "Year"
+
+data <- data %>%
+  mutate(Year = as.numeric(Year))
+
+data_long <- data |>
+  pivot_longer(
+    cols = -c(Year, state_code),  # Exclude Year and state_code from pivoting
+    names_to = "License_Type",     # New column to hold the names of original columns
+    values_to = "Count"            # New column to hold the values
+  )
+
+# to line plot of each license type over time for a specific state (e.g., Montana)
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal() +
+  facet_wrap(~ License_Type, scales = "free_y")  # To separate plots by License Type with individual y-scales
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  labs(title = "Hunting License Trends Over Time in Montana", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+# Plot the data
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_line() +
+  geom_point() +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+data_long$License_Type <- factor(data_long$License_Type, 
+                                 labels = c("Cost Non-Resident", "Cost Resident", "Gross Cost", 
+                                            "Non-Resident Licenses", "Paid Holders", "Resident Licenses"))
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count)) +
+  geom_line(aes(color = License_Type)) +
+  geom_point(aes(color = License_Type)) +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost") +
+  theme_minimal() +
+  facet_wrap(~ License_Type, scales = "free_y")
+
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method = "loess") +
+  scale_y_log10() +
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Log Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+
+# Load the scales package for custom label formatting
+library(scales)
+
+# Plot with custom y-axis labels
+ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method = "loess") +
+  scale_y_log10(labels = comma) +  # Use comma format for log scale labels
+  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
+       x = "Year", 
+       y = "Count / Cost",
+       color = "License Type") +
+  theme_minimal()
+```
+
