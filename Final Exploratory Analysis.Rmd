@@ -123,7 +123,7 @@ Note that we removed Texas from this graph. It was an extreme value which extend
 ![Hunting Licenses by State](C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Visuals/Hunting Licenses by State.png)
 
 From this visualization, we see that most states do not have significant variation in their number of hunting licenses. However, Texas saw an upward trend in licenses from 2012 to 2017. The following plot explores the relationship between the increase in hunting licenses and population changes in Texas:
-![License vs Population in Texas](C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Visuals/License vs Population in Texas.png)
+![License vs Population in Texas](C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Visuals/license vs pop texas.png)
 
 The data does not seem to indicate a linear relationship. This could be due to a variety of reasons, including the possibility that an increase in the number of hunting licenses does not necessarily mean that there is an increase in the amount of Bison hunting (as the licenses could be for any number of animals).
 
