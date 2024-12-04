@@ -6,6 +6,7 @@ output: html_document
 ---
 Load Raw Data/Packages: *Data loaded from path on my local computer
 ```{r}
+#Load Libraries:
 library(readr)
 library(tidyverse)
 library(readxl)
@@ -18,8 +19,9 @@ library(dplyr)
 library(ggplot2)
 library(units)
 
-Bison_numbers <- read_csv("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Data/Bison_numbers_by_the_county National Bison Association.csv")
-hunting_data_tidy <- read_excel("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Data/hunting_data_tidy.xlsx")
+#Load Data:
+Bison_numbers = read_csv("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Data/Bison_numbers_by_the_county National Bison Association.csv")
+hunting_data_tidy = read_excel("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Data/hunting_data_tidy.xlsx")
 ```
 
 Create Tidy Version of Population Data:
@@ -79,6 +81,7 @@ st_crs(ranges)
 ranges2 = st_transform(ranges, crs = st_crs(states))
 stopifnot(st_crs(ranges2) == (st_crs(states)))
 
+#Visualize:
 tm_shape(states) + tm_polygons() +
   tm_shape(ranges2) + tm_polygons(col = "darkgreen")
 ```
@@ -115,6 +118,7 @@ Additional Visualizations:
 graph1_data = merged_bison_data |>
   filter(state_code == "MONTANA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA")
 
+#Clean some data sets based on what I want in each visualization:
 graph2_data = merged_bison_data |>
   filter(state_code == "MONTANA" | state_code == "WYOMING" | state_code == "NORTH DAKOTA" | state_code == "SOUTH DAKOTA" | state_code == "NEBRASKA" | state_code == "KANSAS" | state_code == "OKLAHOMA" | state_code == "IDAHO" | state_code == "COLORADO" | state_code == "NEW MEXICO") |>
   mutate(population_bin = cut(total_population, breaks = c(0, 2000, 5000, 10000), labels = c("0-2000", "2000-5000", "5000-10000")))
@@ -161,7 +165,7 @@ ggplot(graph2_data, aes(x = year, y = `Paid Hunting License Holders`)) +
 #Removed Texas from this plot because it was an extreme value and make the graph less interpretable by extending the y-axis so much. Texas saw a small increase over the last time period but was otherwise steady.
 
 #Looking for relationship between number of hunting licenses and population
-ggplot(merged_bison_data, aes(x = `Paid Hunting License Holders`, y = total_population)) +
+ggplot(graph2_data, aes(x = `Paid Hunting License Holders`, y = total_population)) +
   geom_point() + 
   geom_smooth() +
   xlab("Number of Lisense Holders") +
@@ -279,7 +283,7 @@ ggplot(distance_hunting_land, aes(x = public, y = difference)) +
 distance_hunting_land2 = distance_hunting_land |>
   filter(ABBREV != "ID") |>
   filter(ABBREV != "MT")
-#Removing these states is justified because... Yellowstone herds moving between states? private land owners shifting herds between states? Need to look at documentation.
+#Removing these states is justified based on explanation in exploratory analysis.
 
 #Plot with Regression Line:
 ggplot(distance_hunting_land2, aes(x = public, y = difference)) + 
@@ -294,6 +298,24 @@ land_pop_model = lm(difference ~ public, data = distance_hunting_land2)
 tidy(land_pop_model, conf.int = T) 
 ```
 
+
+Final Research Question: The impact of Market Price on Population
+```{r}
+#Load Data:
+price_data <- read_csv("C:/Users/kdfro/Documents/MSU/GitHub/ECNS-560-Term-Project-2/Data/Price.csv")
+
+#get average by year:
+price_data_year = price_data |>
+  mutate(Date = stringr::str_sub(price_data$Date, -4)) |>
+  group_by(Date) |>
+  summarize(ave_price = mean(Avg_Price)) |>
+  rename(year = Date) |>
+  filter(year == "2012" | year == "2017")
+
+#Unfortunately, this is not enough data to draw meaningful conclusions. However, the dramatic increase in market price could be a result of the corresponding shift in the supply curve of Bison.
+```
+
+
 Some Basic Histograms of Single Variables:
 ```{r}
 hist(distance_hunting_land2$difference, main = "% Decrease in Bison Population 2002 - 2017", xlab = "% Decrease", col = "red") #histogram of percent decrease in bison populations from 2002-2017
@@ -304,99 +326,3 @@ hist(distance_hunting_land2$`Paid Hunting License Holders`, main = "Number of Hu
 
 hist(distance_hunting_land2$public, main = "% of Land that is Public", xlab = "% of Land that is Public", col = "lightyellow") #histogram of percent of land that is public from 2002-2017
 ```
-
-Saki's Plots:
-```{r}
-data = hunting_data_tidy
-
-names(data)[2] <- "Year"
-
-data <- data %>%
-  mutate(Year = as.numeric(Year))
-
-data_long <- data |>
-  pivot_longer(
-    cols = -c(Year, state_code),  # Exclude Year and state_code from pivoting
-    names_to = "License_Type",     # New column to hold the names of original columns
-    values_to = "Count"            # New column to hold the values
-  )
-
-# to line plot of each license type over time for a specific state (e.g., Montana)
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Hunting License Trends Over Time in Montana", 
-       x = "Year", 
-       y = "Count / Cost",
-       color = "License Type") +
-  theme_minimal()
-
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Hunting License Trends Over Time in Montana", 
-       x = "Year", 
-       y = "Count / Cost",
-       color = "License Type") +
-  theme_minimal() +
-  facet_wrap(~ License_Type, scales = "free_y")  # To separate plots by License Type with individual y-scales
-
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_point() +
-  geom_smooth(se = FALSE) +
-  labs(title = "Hunting License Trends Over Time in Montana", 
-       x = "Year", 
-       y = "Count / Cost",
-       color = "License Type") +
-  theme_minimal()
-
-# Plot the data
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_line() +
-  geom_point() +
-  scale_y_log10() +
-  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
-       x = "Year", 
-       y = "Log Count / Cost",
-       color = "License Type") +
-  theme_minimal()
-
-data_long$License_Type <- factor(data_long$License_Type, 
-                                 labels = c("Cost Non-Resident", "Cost Resident", "Gross Cost", 
-                                            "Non-Resident Licenses", "Paid Holders", "Resident Licenses"))
-
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count)) +
-  geom_line(aes(color = License_Type)) +
-  geom_point(aes(color = License_Type)) +
-  scale_y_log10() +
-  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
-       x = "Year", 
-       y = "Log Count / Cost") +
-  theme_minimal() +
-  facet_wrap(~ License_Type, scales = "free_y")
-
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_point() +
-  geom_smooth(se = FALSE, method = "loess") +
-  scale_y_log10() +
-  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
-       x = "Year", 
-       y = "Log Count / Cost",
-       color = "License Type") +
-  theme_minimal()
-
-# Load the scales package for custom label formatting
-library(scales)
-
-# Plot with custom y-axis labels
-ggplot(data_long %>% filter(state_code == "MONTANA"), aes(x = Year, y = Count, color = License_Type)) +
-  geom_point() +
-  geom_smooth(se = FALSE, method = "loess") +
-  scale_y_log10(labels = comma) +  # Use comma format for log scale labels
-  labs(title = "Hunting License Trends Over Time in Montana (Log Scale)", 
-       x = "Year", 
-       y = "Count / Cost",
-       color = "License Type") +
-  theme_minimal()
-```
-
